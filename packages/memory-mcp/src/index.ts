@@ -14,6 +14,9 @@
  *   MEMORY_EMBED_DIM    (optional) — embedding dimension (default: 768)
  *   MEMORY_EMBED_MODEL  (optional) — model identifier (default: qwen3-embedding-0.6b)
  *   MEMORY_AUTO_INDEX   (optional) — "on" (default) or "off"
+ *   KNOWLEDGE_PROJECT_ROOT (optional) — project root (default: cwd)
+ *   KNOWLEDGE_ROOT      (optional) — local governance state (default: <project>/.knowledge)
+ *   KNOWLEDGE_DOCS_PATH (optional) — materialized docs path (default: <project>/docs/knowledge)
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -24,11 +27,28 @@ import { createMemorySystem } from './factory.js';
 import { handleReindex, reindexInputSchema } from './tools/reindex.js';
 import { handleSearch, searchInputSchema } from './tools/search.js';
 import { handleStatus } from './tools/status.js';
+import {
+  handleKnowledgeApprove,
+  handleKnowledgeCapture,
+  handleKnowledgeFeed,
+  handleKnowledgeIndexSync,
+  handleKnowledgeMaterialize,
+  handleKnowledgeReject,
+  handleKnowledgeUndo,
+  knowledgeApproveInputSchema,
+  knowledgeCaptureInputSchema,
+  knowledgeFeedInputSchema,
+  knowledgeIndexSyncInputSchema,
+  knowledgeMaterializeInputSchema,
+  knowledgeRejectInputSchema,
+  knowledgeUndoInputSchema,
+} from './tools/knowledge.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   console.error(`[memory-mcp] Starting — folder: ${config.folderPath}`);
   console.error(`[memory-mcp] Database: ${config.dbPath}`);
+  console.error(`[memory-mcp] Knowledge root: ${config.knowledgeRoot}`);
   console.error(`[memory-mcp] Embed mode: ${config.embedMode}`);
 
   const system = await createMemorySystem(config);
@@ -40,8 +60,11 @@ async function main(): Promise<void> {
       console.error(
         `[memory-mcp] Indexed ${result.docsIndexed} docs, skipped ${result.docsSkipped} (${result.durationMs}ms)`,
       );
+      await system.knowledgeIndex.generate();
+      console.error('[memory-mcp] Knowledge index synchronized.');
     } catch (err) {
       console.error('[memory-mcp] Warning: initial indexing failed:', err);
+      system.knowledgeIndex.markDirty('initial index sync failed');
     }
   }
 
@@ -76,7 +99,66 @@ async function main(): Promise<void> {
     'Show memory system health: folder path, database path, document count, ' +
       'FTS consistency check, and embedding server status.',
     {},
-    async () => handleStatus(config, system.store, system.indexBuilder, system.embeddingService, system.vectorStore),
+    async () =>
+      handleStatus(
+        config,
+        system.store,
+        system.indexBuilder,
+        system.embeddingService,
+        system.vectorStore,
+        system.markerQueue,
+        system.knowledgeIndex,
+      ),
+  );
+
+  server.tool(
+    'knowledge_feed',
+    'List local knowledge governance candidates. Pending candidates are local-only and are not included in .knowledge/index.json.',
+    knowledgeFeedInputSchema,
+    async (input) => handleKnowledgeFeed(system.markerQueue, input as Parameters<typeof handleKnowledgeFeed>[1]),
+  );
+
+  server.tool(
+    'knowledge_capture',
+    'Capture a knowledge candidate into the local marker queue with needs_review status. This does not index or materialize it.',
+    knowledgeCaptureInputSchema,
+    async (input) => handleKnowledgeCapture(system.markerQueue, input as Parameters<typeof handleKnowledgeCapture>[1]),
+  );
+
+  server.tool(
+    'knowledge_approve',
+    'Approve a local knowledge candidate. Approved candidates still require knowledge_materialize before becoming searchable.',
+    knowledgeApproveInputSchema,
+    async (input) => handleKnowledgeApprove(system.markerQueue, input as Parameters<typeof handleKnowledgeApprove>[1]),
+  );
+
+  server.tool(
+    'knowledge_reject',
+    'Reject a local knowledge candidate and optionally store the reason.',
+    knowledgeRejectInputSchema,
+    async (input) => handleKnowledgeReject(system.markerQueue, input as Parameters<typeof handleKnowledgeReject>[1]),
+  );
+
+  server.tool(
+    'knowledge_undo',
+    'Move a candidate back to needs_review.',
+    knowledgeUndoInputSchema,
+    async (input) => handleKnowledgeUndo(system.markerQueue, input as Parameters<typeof handleKnowledgeUndo>[1]),
+  );
+
+  server.tool(
+    'knowledge_materialize',
+    'Materialize an approved candidate into docs/knowledge, reindex it, and synchronize .knowledge/index.json.',
+    knowledgeMaterializeInputSchema,
+    async (input) =>
+      handleKnowledgeMaterialize(system.materializationService, input as Parameters<typeof handleKnowledgeMaterialize>[1]),
+  );
+
+  server.tool(
+    'knowledge_index_sync',
+    'Regenerate .knowledge/index.json from materialized docs and local candidate counts.',
+    knowledgeIndexSyncInputSchema,
+    async () => handleKnowledgeIndexSync(system.knowledgeIndex),
   );
 
   const transport = new StdioServerTransport();

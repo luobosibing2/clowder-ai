@@ -3,8 +3,10 @@
 import { z } from 'zod';
 import type { MemoryConfig } from '../config.js';
 import type { EmbeddingService } from '../core/EmbeddingService.js';
+import type { IMarkerQueue } from '../core/interfaces.js';
 import type { SqliteEvidenceStore } from '../core/SqliteEvidenceStore.js';
 import type { VectorStore } from '../core/VectorStore.js';
+import type { KnowledgeIndexManager } from '../governance/KnowledgeIndex.js';
 import type { IndexBuilder } from '../indexer/IndexBuilder.js';
 
 export const statusInputSchema = {};
@@ -17,6 +19,8 @@ export async function handleStatus(
   indexBuilder: IndexBuilder,
   embeddingService?: EmbeddingService,
   vectorStore?: VectorStore,
+  markerQueue?: IMarkerQueue,
+  knowledgeIndex?: KnowledgeIndexManager,
 ) {
   try {
     const healthy = await store.health();
@@ -29,6 +33,8 @@ export async function handleStatus(
       '',
       `Folder:    ${config.folderPath}`,
       `Database:  ${config.dbPath}`,
+      `Knowledge: ${config.knowledgeDocsPath}`,
+      `Manifest:  ${config.knowledgeIndexPath}`,
       `DB health: ${healthy ? 'OK' : 'ERROR'}`,
       '',
       `Documents indexed: ${docCount}`,
@@ -49,6 +55,19 @@ export async function handleStatus(
         const vecCount = vectorStore.count();
         lines.push(`Vectors indexed: ${vecCount}`);
       }
+    }
+
+    if (markerQueue && knowledgeIndex) {
+      const markers = await markerQueue.list();
+      const pending = markers.filter((marker) => marker.status === 'needs_review').length;
+      const approved = markers.filter((marker) => marker.status === 'approved').length;
+      const manifest = await knowledgeIndex.read();
+      lines.push('');
+      lines.push('Knowledge governance:');
+      lines.push(`  pending: ${pending}`);
+      lines.push(`  approved: ${approved}`);
+      lines.push(`  materialized entries: ${manifest?.entries.length ?? 0}`);
+      lines.push(`  index dirty: ${knowledgeIndex.isDirty() ? 'yes' : 'no'}`);
     }
 
     return { content: [{ type: 'text' as const, text: lines.join('\n') }] };

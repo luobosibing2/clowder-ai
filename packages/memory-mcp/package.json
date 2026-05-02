@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "bin": {
-    "memory-mcp": "./dist/index.js"
+    "memory-mcp": "./dist/index.js",
+    "knowledge-governance-mcp": "./dist/index.js",
+    "knowledge-hook": "./dist/hooks/knowledge-hook.js"
   },
   "main": "./dist/index.js",
   "scripts": {

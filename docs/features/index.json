@@ -626,6 +626,12 @@
     },
     {
       "id": "F102",
+      "name": "知识治理功能：从提取候选到可检索沉淀",
+      "status": "unknown",
+      "file": "F102-knowledge-governance-pipeline.md"
+    },
+    {
+      "id": "F102",
       "name": "记忆组件 Adapter 化重构 — IEvidenceStore + 本地索引",
       "status": "done | **Owner**: Ragdoll | **Priority**: P1 | **Completed**: 2026-04-04",
       "file": "F102-memory-adapter-refactor.md"
@@ -991,5 +997,5 @@
       "file": "F159-catagent-native-provider.md"
     }
   ],
-  "generated_at": "2026-04-12T07:16:10.724Z"
+  "generated_at": "2026-04-29T15:13:11.200Z"
 }

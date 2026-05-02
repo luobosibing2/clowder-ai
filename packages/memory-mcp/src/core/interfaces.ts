@@ -7,6 +7,15 @@ export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 export type EvidenceStatus = 'active' | 'done' | 'archived';
 
+export const KNOWLEDGE_MARKER_STATUSES = [
+  'needs_review',
+  'approved',
+  'rejected',
+  'materialized',
+  'indexed',
+] as const;
+export type KnowledgeMarkerStatus = (typeof KNOWLEDGE_MARKER_STATUSES)[number];
+
 export type ProvenanceTier = 'authoritative' | 'derived' | 'soft_clue';
 
 export interface Provenance {
@@ -39,6 +48,50 @@ export interface EvidenceItem {
       createdAt?: string;
     }>;
   }>;
+}
+
+export interface KnowledgeMarker {
+  id: string;
+  title?: string;
+  content: string;
+  source: string;
+  status: KnowledgeMarkerStatus;
+  targetKind?: EvidenceKind;
+  reason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeMarkerFilter {
+  status?: KnowledgeMarkerStatus;
+  targetKind?: EvidenceKind;
+  source?: string;
+}
+
+export interface KnowledgeIndexEntry {
+  id: string;
+  title: string;
+  kind: EvidenceKind;
+  status: EvidenceStatus;
+  governanceStatus: 'materialized' | 'indexed';
+  sourcePath: string;
+  markerId?: string;
+  updatedAt: string;
+  keywords: string[];
+}
+
+export interface KnowledgeIndex {
+  version: 1;
+  generated_at: string;
+  dirty: boolean;
+  entries: KnowledgeIndexEntry[];
+  candidate_summary: {
+    pending: number;
+    approved: number;
+    rejected: number;
+    materialized: number;
+    indexed: number;
+  };
 }
 
 export interface Edge {
@@ -94,6 +147,27 @@ export interface IIndexBuilder {
   rebuild(options?: { force?: boolean }): Promise<RebuildResult>;
   incrementalUpdate(changedPaths: string[]): Promise<void>;
   checkConsistency(): Promise<ConsistencyReport>;
+}
+
+export interface IMarkerQueue {
+  submit(marker: Omit<KnowledgeMarker, 'id' | 'createdAt' | 'updatedAt'>): Promise<KnowledgeMarker>;
+  list(filter?: KnowledgeMarkerFilter): Promise<KnowledgeMarker[]>;
+  transition(id: string, to: KnowledgeMarkerStatus, patch?: Partial<Pick<KnowledgeMarker, 'reason' | 'targetKind'>>): Promise<void>;
+}
+
+export interface MaterializeResult {
+  markerId: string;
+  outputPath: string;
+  anchor: string;
+  reindexed: boolean;
+  indexSynced: boolean;
+  dirty: boolean;
+  warnings: string[];
+}
+
+export interface IMaterializationService {
+  canMaterialize(markerId: string): Promise<boolean>;
+  materialize(markerId: string, options?: { targetKind?: EvidenceKind }): Promise<MaterializeResult>;
 }
 
 // ── Embedding / Vector types ──────────────────────────────────────────
